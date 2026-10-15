@@ -1,4 +1,4 @@
-const CACHE='afn-flota-pwa-v56';
+const CACHE='afn-flota-trial30-v1-pwa-v56';
 const STATIC=['./','./index.html','./manifest.webmanifest','./afn-icon.svg','./pwa-icon-192.png','./pwa-icon-512.png','./afn-flota-logo.png','./afn-flota-dashboard-logo.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(STATIC)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
