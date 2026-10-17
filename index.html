@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es">
-<head><script>if(new URLSearchParams(location.hash.slice(1)).get('type')==='recovery')location.replace('recovery.html'+location.search+location.hash);</script><meta name="afn-version" content="trial5-planes-v3">
+<head><script>if(new URLSearchParams(location.hash.slice(1)).get('type')==='recovery')location.replace('recovery.html'+location.search+location.hash);</script><meta name="afn-version" content="pagos-produccion-v1">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AFN Flota</title>
@@ -1681,7 +1681,8 @@ window.applyRole = (role) => {
 let trialAllowed=false,trialRole='',trialTimer;
 const trialShow=window.show;
 window.show=(id,b)=>trialShow(!trialAllowed&&trialRole&&trialRole!=='AFN_ADMIN'?'planes':id,b);
-async function verifyFlotaTrial(){const db=window.afnSupabase;if(!db)return;const {data:{user}}=await db.auth.getUser();if(!user){trialRole='';trialAllowed=false;document.getElementById('flotaTrialBanner')?.remove();return;}const profile=await db.from('profiles').select('role').eq('id',user.id).single();trialRole=profile.data?.role||'';if(trialRole==='AFN_ADMIN'){trialAllowed=true;return;}const r=await db.rpc('flota_trial_status');if(r.error||!r.data){trialAllowed=false;alert('No se pudo verificar la suscripción. Actualiza o contacta a soporte.');return;}if(r.data.inactive===true){trialAllowed=false;clearTimeout(trialTimer);await window.afnInactiveLogin();return;}trialAllowed=r.data.active===true;let banner=document.getElementById('flotaTrialBanner');if(!banner){banner=document.createElement('div');banner.id='flotaTrialBanner';banner.style.cssText='position:fixed;bottom:12px;right:12px;max-width:90vw;z-index:9999;background:#edf7ff;border:1px solid #06467e;padding:12px;border-radius:10px;color:#06467e';document.body.append(banner);}banner.hidden=r.data.plan!=='FREE';banner.textContent=trialAllowed?'Prueba gratis · '+r.data.days_remaining+' día(s) restantes · Vence '+new Date(r.data.ends_at).toLocaleString('es-MX',{timeZone:'America/Mexico_City'}):'Prueba terminada. '+(trialRole==='COMPANY_ADMIN'?'Contrata Control o Profesional para continuar.':'Solicita al administrador contratar un plan.')+' Tus datos se conservan.';if(!trialAllowed)window.show('planes');clearTimeout(trialTimer);if(trialAllowed&&r.data.plan==='FREE')trialTimer=setTimeout(verifyFlotaTrial,Math.min(2147483647,Math.max(1000,new Date(r.data.ends_at)-new Date(r.data.server_now))));}
+window.afnRefreshSubscription=verifyFlotaTrial;
+async function verifyFlotaTrial(){const db=window.afnSupabase;if(!db)return;const {data:{user}}=await db.auth.getUser();if(!user){trialRole='';trialAllowed=false;document.getElementById('flotaTrialBanner')?.remove();return;}const profile=await db.from('profiles').select('role').eq('id',user.id).single();trialRole=profile.data?.role||'';if(trialRole==='AFN_ADMIN'){trialAllowed=true;return;}const r=await db.rpc('flota_trial_status');if(r.error||!r.data){trialAllowed=false;alert('No se pudo verificar la suscripción. Actualiza o contacta a soporte.');return;}if(r.data.inactive===true){trialAllowed=false;clearTimeout(trialTimer);await window.afnInactiveLogin();return;}trialAllowed=r.data.active===true;let banner=document.getElementById('flotaTrialBanner');if(!banner){banner=document.createElement('div');banner.id='flotaTrialBanner';banner.style.cssText='position:fixed;bottom:12px;right:12px;max-width:90vw;z-index:9999;background:#edf7ff;border:1px solid #06467e;padding:12px;border-radius:10px;color:#06467e';document.body.append(banner);}banner.hidden=r.data.plan!=='FREE'&&trialAllowed;banner.textContent=trialAllowed?'Prueba gratis · '+r.data.days_remaining+' día(s) restantes · Vence '+new Date(r.data.ends_at).toLocaleString('es-MX',{timeZone:'America/Mexico_City'}):'Suscripción vencida. '+(trialRole==='COMPANY_ADMIN'?'Contrata Control o Profesional para continuar.':'Solicita al administrador contratar un plan.')+' Tus datos se conservan.';if(!trialAllowed)window.show('planes');clearTimeout(trialTimer);if(trialAllowed&&r.data.ends_at)trialTimer=setTimeout(verifyFlotaTrial,Math.min(2147483647,Math.max(1000,new Date(r.data.ends_at)-new Date(r.data.server_now))));}
 const trialApply=window.applyRole;window.applyRole=role=>{trialApply(role);verifyFlotaTrial();};
 window.afnSupabase?.auth.onAuthStateChange(()=>setTimeout(verifyFlotaTrial,0));verifyFlotaTrial();
 </script>
@@ -1711,5 +1712,72 @@ window.applyRole=async function(role){
 };
 })();
 </script>
+
+<script type="module">
+/* AFN_FLOTA_PAGOS_PRODUCCION_V1: precio, orden y activación se verifican en el servidor. */
+(()=>{
+ const money=n=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n);
+ let busy=false,checking=false;
+ const notice=text=>{const n=document.getElementById('plan-notice');if(n){n.textContent=text;n.classList.add('show');}};
+ const validURL=v=>{try{const u=new URL(v);return u.protocol==='https:'&&['www.mercadopago.com.mx','mercadopago.com.mx','www.mercadopago.com','mercadopago.com'].includes(u.hostname)&&!u.username&&!u.password;}catch{return false;}};
+ async function call(body){const r=await window.afnSupabase.functions.invoke('flota-checkout-prod',{body});
+  if(r.error){let message=r.data?.error;try{message=message||(await r.error.context.clone().json()).error;}catch{}throw Error(message||'No fue posible conectar con pagos. Revisa tu conexión e intenta nuevamente.');}
+  if(r.data?.error)throw Error(r.data.error);return r.data;
+ }
+ async function context(){const db=window.afnSupabase;if(!db)throw Error('La conexión aún se está preparando.');const u=await db.auth.getUser();if(!u.data.user)throw Error('Inicia sesión para contratar.');const p=await db.from('profiles').select('company_id,role,active').eq('id',u.data.user.id).single();if(p.error||!p.data?.active||p.data.role!=='COMPANY_ADMIN')throw Error('Solo el administrador activo de empresa puede contratar.');return {user:u.data.user,company:p.data.company_id};}
+ const key=c=>'afnFlotaProdOrder:'+c.user.id+':'+c.company;
+ window.startFlotaCheckout=async plan=>{
+  if(busy)return;busy=true;
+  try{const c=await context(),q=await call({action:'quote',plan});
+   if(!confirm('Contratar o renovar '+(plan==='CONTROL'?'Control':'Profesional')+' por '+money(q.amount)+' MXN durante un mes.\n\nEs un cobro real. La renovación es manual; no se realizarán cargos automáticos.\n\n¿Continuar a Mercado Pago?'))return;
+   notice('Preparando el pago…');
+   const r=await call({action:'create',plan,expected_amount:q.amount});
+   if(Number(r.amount)!==Number(q.amount)||!validURL(r.checkout_url))throw Error('La respuesta de pago no coincide con el precio confirmado.');
+   localStorage.setItem(key(c),r.order_id);location.assign(r.checkout_url);
+  }catch(e){notice(e.message);alert(e.message);}finally{busy=false;}
+ };
+ window.verifyFlotaPayment=async(auto=false)=>{
+  if(checking)return;checking=true;
+  try{const c=await context(),params=new URLSearchParams(location.search),id=params.get('flota_prod_order')||localStorage.getItem(key(c));
+   if(!id){if(!auto)notice('No hay una orden de pago pendiente para esta cuenta.');return;}
+   notice('Consultando la confirmación del pago…');
+   const payment=params.get('payment_id')||params.get('collection_id');
+   const r=await call({action:'status',order_id:id,...(payment?{payment_id:payment}:{})});
+   if(r.status==='approved'){
+    await window.afnRefreshSubscription?.();await window.loadCurrentCompanyPlan?.();
+    notice('Pago confirmado. Plan '+r.plan+' · Vigencia hasta '+new Date(r.period_end).toLocaleString('es-MX',{timeZone:'America/Mexico_City'})+'.');
+    localStorage.removeItem('afnFlotaPlanPendiente');
+   }else if(r.status==='manual_review')notice('El pago fue recibido y requiere revisión de soporte. No realices otro pago.');
+   else notice('Estado del pago: '+r.status+'. Si ya pagaste, espera y utiliza Verificar pago. No repitas el cobro.');
+   if(params.has('flota_prod_order')){['flota_prod_order','flota_payment','payment_id','collection_id','collection_status','status','preference_id','external_reference','merchant_order_id','processing_mode','merchant_account_id','site_id'].forEach(k=>params.delete(k));history.replaceState(null,'',location.pathname+(params.size?'?'+params.toString():'')+location.hash);}
+  }catch(e){notice(e.message);if(!auto)alert(e.message);}finally{checking=false;}
+ };
+ window.changePlan=(name)=>{const code={Control:'CONTROL',Profesional:'PROFESIONAL'}[name];if(code)return window.startFlotaCheckout(code);if(name==='Empresarial'){location.href='mailto:administracion@afningenieriadigital.com?subject=AFN%20Flota%20-%20Plan%20Empresarial';return;}notice('La prueba gratis se asigna al crear la empresa y no puede reiniciarse desde Planes.');};
+ const oldLoad=window.loadCurrentCompanyPlan;
+ window.loadCurrentCompanyPlan=async()=>{
+  await oldLoad?.();
+  try{const c=await context(),r=await window.afnSupabase.rpc('flota_trial_status');if(r.error||!r.data)throw Error('No fue posible consultar la vigencia.');
+   const status=r.data;document.querySelectorAll('#planes .plan-card').forEach(card=>{const b=card.querySelector('button'),code=card.dataset.planCode;if(!b)return;if(['CONTROL','PROFESIONAL'].includes(code)){b.disabled=false;b.textContent=code===status.plan?'Renovar un mes':'Contratar '+(code==='CONTROL'?'Control':'Profesional');b.onclick=()=>window.startFlotaCheckout(code);}else if(code==='FREE'){b.disabled=true;b.textContent=status.plan==='FREE'?'Prueba asignada':'Prueba no disponible';}});
+   const d=document.getElementById('current-plan-detail');if(d&&status.plan!=='FREE'&&status.ends_at)d.textContent+=' · Vence '+new Date(status.ends_at).toLocaleString('es-MX',{timeZone:'America/Mexico_City'});
+  }catch(e){notice(e.message);}
+ };
+ // Registro con correo confirmado: todos crean primero su empresa; el pago se inicia dentro de Planes.
+ const oldRegister=window.startRegistration;
+ window.startRegistration=async plan=>{
+  if(plan==='EMPRESARIAL'){location.href='mailto:administracion@afningenieriadigital.com?subject=AFN%20Flota%20-%20Cotizacion%20Empresarial';return;}
+  if(['CONTROL','PROFESIONAL'].includes(plan))localStorage.setItem('afnFlotaPlanPendiente',plan);
+  await oldRegister('FREE');
+  const n=document.getElementById('register-note');if(n?.textContent.startsWith('✓')&&plan!=='FREE')n.textContent+=' Después de confirmar tu correo, inicia sesión y contrata el plan seleccionado desde Planes.';
+ };
+ const oldShowRegistration=window.showRegistration;
+ window.showRegistration=(plan='FREE')=>{oldShowRegistration(plan);const n=document.getElementById('register-note'),b=n?.previousElementSibling;if(b)b.textContent=plan==='EMPRESARIAL'?'Solicitar cotización':'Crear cuenta y confirmar correo';if(['CONTROL','PROFESIONAL'].includes(plan)){const p=document.getElementById('registration-plan-description');if(p)p.textContent+=' Primero confirma tu correo; después podrás pagar desde Planes. El plan se activa únicamente tras confirmarse el pago.';}};
+ const oldApply=window.applyRole;
+ window.applyRole=async function(role){const result=await oldApply.apply(this,arguments);if(role==='COMPANY_ADMIN'){await window.loadCurrentCompanyPlan();if(new URLSearchParams(location.search).has('flota_prod_order')){window.show('planes');await window.verifyFlotaPayment(true);}else if(localStorage.getItem('afnFlotaPlanPendiente')){window.show('planes');notice('Selecciona el plan que deseas contratar. El pago se realizará en Mercado Pago.');}}return result;};
+ const plans=document.getElementById('planes');if(plans){const box=document.createElement('div');box.className='panel';box.style.marginTop='16px';const p=document.createElement('p');p.textContent='Cada pago aprobado habilita un mes. Renovación manual, sin cargos recurrentes automáticos. Los importes finales son $999 MXN para Control y $3,330 MXN para Profesional.';const b=document.createElement('button');b.type='button';b.className='save';b.textContent='Verificar pago';b.onclick=()=>window.verifyFlotaPayment();box.append(p,b);plans.append(box);}
+})();
+</script>
+
+
 </body>
+
 </html>
