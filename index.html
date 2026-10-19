@@ -228,7 +228,7 @@
 <p>Solo administradores y personal autorizado pueden consultar reportes e indicadores validados.</p>
 </div>
 </div>
-<div id="planes" class="page content plans-page">
+<div id="planes" class="page content plans-page" hidden>
 <div class="plans-head"><div><h1>Planes y suscripción</h1><p>Consulta las funciones incluidas y actualiza tu plan cuando tu operación lo requiera.</p></div><div class="current-plan"><small>PLAN ACTUAL</small><strong id="current-plan-name">Cargando…</strong><span id="current-plan-detail">Consultando tu suscripción.</span></div></div>
 <div class="plan-usage"><div class="usage-item"><small>Vehículos en prueba gratis</small><b>Hasta 5 vehículos</b></div><div class="usage-item"><small>Usuarios en prueba gratis</small><b>15 operadores · 1 administrador</b></div><div class="usage-item"><small>Duración de la prueba gratis</small><b>5 días naturales</b></div></div>
 <div class="plans-grid">
@@ -1680,10 +1680,10 @@ window.applyRole = (role) => {
 <script type="module">
 let trialAllowed=false,trialRole='',trialTimer;
 const trialShow=window.show;
-window.show=(id,b)=>trialShow(!trialAllowed&&trialRole&&trialRole!=='AFN_ADMIN'?'planes':id,b);
+window.show=(id,b)=>trialShow(!trialAllowed&&trialRole==='COMPANY_ADMIN'?'planes':id==='planes'&&trialRole!=='COMPANY_ADMIN'?'operador-movil':id,b);
 window.afnRefreshSubscription=verifyFlotaTrial;
-async function verifyFlotaTrial(){const db=window.afnSupabase;if(!db)return;const {data:{user}}=await db.auth.getUser();if(!user){trialRole='';trialAllowed=false;document.getElementById('flotaTrialBanner')?.remove();return;}const profile=await db.from('profiles').select('role').eq('id',user.id).single();trialRole=profile.data?.role||'';if(trialRole==='AFN_ADMIN'){trialAllowed=true;return;}const r=await db.rpc('flota_trial_status');if(r.error||!r.data){trialAllowed=false;alert('No se pudo verificar la suscripción. Actualiza o contacta a soporte.');return;}if(r.data.inactive===true){trialAllowed=false;clearTimeout(trialTimer);await window.afnInactiveLogin();return;}trialAllowed=r.data.active===true;let banner=document.getElementById('flotaTrialBanner');if(!banner){banner=document.createElement('div');banner.id='flotaTrialBanner';banner.style.cssText='position:fixed;bottom:12px;right:12px;max-width:90vw;z-index:9999;background:#edf7ff;border:1px solid #06467e;padding:12px;border-radius:10px;color:#06467e';document.body.append(banner);}banner.hidden=r.data.plan!=='FREE'&&trialAllowed;banner.textContent=trialAllowed?'Prueba gratis · '+r.data.days_remaining+' día(s) restantes · Vence '+new Date(r.data.ends_at).toLocaleString('es-MX',{timeZone:'America/Mexico_City'}):'Suscripción vencida. '+(trialRole==='COMPANY_ADMIN'?'Contrata Control o Profesional para continuar.':'Solicita al administrador contratar un plan.')+' Tus datos se conservan.';if(!trialAllowed)window.show('planes');clearTimeout(trialTimer);if(trialAllowed&&r.data.ends_at)trialTimer=setTimeout(verifyFlotaTrial,Math.min(2147483647,Math.max(1000,new Date(r.data.ends_at)-new Date(r.data.server_now))));}
-const trialApply=window.applyRole;window.applyRole=role=>{trialApply(role);verifyFlotaTrial();};
+async function verifyFlotaTrial(){const db=window.afnSupabase;if(!db)return;const {data:{user}}=await db.auth.getUser();if(!user){trialRole='';trialAllowed=false;document.getElementById('flotaTrialBanner')?.remove();return;}const profile=await db.from('profiles').select('role').eq('id',user.id).single();trialRole=profile.data?.role||'';if(trialRole==='AFN_ADMIN'){trialAllowed=true;return;}const r=await db.rpc('flota_trial_status');if(r.error||!r.data){trialAllowed=false;alert('No se pudo verificar la suscripción. Actualiza o contacta a soporte.');return;}if(r.data.inactive===true){trialAllowed=false;clearTimeout(trialTimer);await window.afnInactiveLogin();return;}trialAllowed=r.data.active===true;let banner=document.getElementById('flotaTrialBanner');if(!banner){banner=document.createElement('div');banner.id='flotaTrialBanner';banner.style.cssText='position:fixed;bottom:12px;right:12px;max-width:90vw;z-index:9999;background:#edf7ff;border:1px solid #06467e;padding:12px;border-radius:10px;color:#06467e';document.body.append(banner);}banner.hidden=r.data.plan!=='FREE'&&trialAllowed;banner.textContent=trialAllowed?'Prueba gratis · '+r.data.days_remaining+' día(s) restantes · Vence '+new Date(r.data.ends_at).toLocaleString('es-MX',{timeZone:'America/Mexico_City'}):'Suscripción vencida. '+(trialRole==='COMPANY_ADMIN'?'Contrata Control o Profesional para continuar.':'Solicita al administrador contratar un plan.')+' Tus datos se conservan.';if(!trialAllowed)window.show(trialRole==='COMPANY_ADMIN'?'planes':'operador-movil');clearTimeout(trialTimer);if(trialAllowed&&r.data.ends_at)trialTimer=setTimeout(verifyFlotaTrial,Math.min(2147483647,Math.max(1000,new Date(r.data.ends_at)-new Date(r.data.server_now))));}
+const trialApply=window.applyRole;window.applyRole=role=>{trialRole=role;trialApply(role);verifyFlotaTrial();};
 window.afnSupabase?.auth.onAuthStateChange(()=>setTimeout(verifyFlotaTrial,0));verifyFlotaTrial();
 </script>
 <!-- AFN_PLATFORM_ADMIN_HOME_V2 -->
@@ -1778,6 +1778,48 @@ window.applyRole=async function(role){
 </script>
 
 
+<style>#planes[hidden],nav button[hidden]{display:none!important}</style>
+<script type="module">
+// Planes pertenece exclusivamente al administrador de empresa.
+(()=>{
+ window.afnPlansRole='';
+ const page=document.getElementById('planes');
+ const buttons=()=>[...document.querySelectorAll('nav button')].filter(b=>b.getAttribute('onclick')?.includes("'planes'"));
+ const sync=()=>{const allowed=window.afnPlansRole==='COMPANY_ADMIN';if(page)page.hidden=!allowed;buttons().forEach(b=>{b.hidden=!allowed;if(!allowed)b.style.display='none';});};
+ const previousShow=window.show;
+ window.show=function(id,button){
+  sync();
+  if(id==='planes'&&window.afnPlansRole!=='COMPANY_ADMIN'){
+   for(const storage of [localStorage,sessionStorage]){for(const key of ['afn-last-page','afn-active-page'])if(storage.getItem(key)==='planes')storage.removeItem(key);}
+   if(window.afnPlansRole==='OPERATOR'){
+    const home=[...document.querySelectorAll('nav button')].find(b=>b.dataset.roles==='OPERATOR'&&b.getAttribute('onclick')?.includes("'operador-movil'"));
+    return previousShow.call(this,'operador-movil',home);
+   }
+   return;
+  }
+  return previousShow.call(this,id,button);
+ };
+ const previousApply=window.applyRole;
+ window.applyRole=async function(role){
+  if(window.afnCreatingOperator&&role==='OPERATOR')return;
+  window.afnPlansRole=role;sync();
+  const value=await previousApply.apply(this,arguments);sync();
+  if(window.afnPlansRole!=='COMPANY_ADMIN'&&page?.classList.contains('show'))window.show('planes');
+  return value;
+ };
+ for(const name of ['loadCurrentCompanyPlan','changePlan','startFlotaCheckout','verifyFlotaPayment']){
+  const fn=window[name];if(typeof fn!=='function')continue;
+  window[name]=function(...args){if(window.afnPlansRole!=='COMPANY_ADMIN')return;return fn.apply(this,args);};
+ }
+ sync();
+ window.afnSupabase?.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){window.afnPlansRole='';sync();}});
+ // Cubre una sesión restaurada antes de instalar este último control de interfaz.
+ if(document.getElementById('app')?.style.display&&document.getElementById('app').style.display!=='none'){
+  (async()=>{const db=window.afnSupabase;if(!db)return;const u=await db.auth.getUser();if(window.afnPlansRole||!u.data.user)return;const p=await db.from('profiles').select('role,active').eq('id',u.data.user.id).single();if(window.afnPlansRole||p.error||!p.data?.active)return;window.afnPlansRole=p.data.role;sync();if(window.afnPlansRole!=='COMPANY_ADMIN'&&page?.classList.contains('show'))window.show('planes');})();
+ }
+})();
+
+</script>
 </body>
 
 </html>

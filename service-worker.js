@@ -1,4 +1,4 @@
-const CACHE='afn-flota-empresarial-v7';
+const CACHE='afn-flota-planes-admin-v8';
 const STATIC=['./','./index.html','./manifest.webmanifest','./afn-icon.svg','./pwa-icon-192.png','./pwa-icon-512.png','./afn-flota-logo.png','./afn-flota-dashboard-logo.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(STATIC)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('afn-flota')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
